@@ -1,6 +1,7 @@
 (executable
  (name graphql_ppx)
  (libraries ocaml-migrate-parsetree
-            graphql_ppx_base)
+            graphql_ppx_base
+            landmarks)
  (flags (:include ../../discover/dune.flags))
  (preprocess (pps ppx_tools_versioned.metaquot_402)))

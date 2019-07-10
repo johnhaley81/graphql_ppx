@@ -3,24 +3,32 @@ module To_current = Migrate_parsetree.Convert(Migrate_parsetree.OCaml_402)(Migra
 
 open Graphql_ppx_base
 open Source_pos
-
+open Landmark
 open Output_bucklescript_utils
 
 let add_pos delimLength base pos =
-  let (_, _, col) = Location.get_pos_info (conv_pos base) in
-  {
-    pos_fname = base.pos_fname;
-    pos_lnum = base.pos_lnum + pos.line;
-    pos_bol = 0;
-    pos_cnum = if pos.line = 0 then delimLength + col + pos.col else pos.col;
-  }
+  let landmark = register "add_pos" in
+  enter landmark;
+  (let (_,_,col) = Location.get_pos_info (conv_pos base) in
+   let result =
+     {
+       pos_fname = (base.pos_fname);
+       pos_lnum = (base.pos_lnum + pos.line);
+       pos_bol = 0;
+       pos_cnum =
+         (if pos.line = 0 then (delimLength + col) + pos.col else pos.col)
+     } in
+   exit landmark; result)
 
 let add_loc delimLength base span =
-  {
+  let landmark = register "add_loc" in
+  enter landmark;
+  (let result = {
     loc_start = add_pos delimLength base.loc_start (fst span);
     loc_end = add_pos delimLength base.loc_start (snd span);
     loc_ghost = false;
-  }
+  } in
+  exit landmark; result)
 
 let fmt_lex_err err =
   let open Graphql_lexer in
@@ -63,14 +71,14 @@ let drop_prefix prefix str =
 let rewrite_query loc delim query =
   let open Ast_402 in
   let open Ast_helper in
-  let open Parsetree in 
+  let open Parsetree in
   let lexer = Graphql_lexer.make query in
   let delimLength = match delim with | Some s -> 2 + String.length s | None -> 1 in
   match Graphql_lexer.consume lexer with
   | Result.Error e -> raise (Location.Error (
       Location.error ~loc:(add_loc delimLength loc e.span |> conv_loc) (fmt_lex_err e.item)
     ))
-  | Result.Ok tokens -> 
+  | Result.Ok tokens ->
     let parser = Graphql_parser.make tokens in
     match Graphql_parser_document.parse_document parser with
     | Result.Error e -> raise (Location.Error (
@@ -131,7 +139,7 @@ let mapper argv =
     | {pmod_desc = Pmod_extension ({txt = "graphql"; loc}, pstr); _} -> begin
         match pstr with
         | PStr [{ pstr_desc = Pstr_eval ({
-            pexp_loc = loc; 
+            pexp_loc = loc;
             pexp_desc = Pexp_constant (Const_string (query, delim)); _}, _); _}] -> begin
             rewrite_query
               (conv_loc_from_ast loc)
