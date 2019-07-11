@@ -31,29 +31,40 @@ let add_loc delimLength base span =
   exit landmark; result)
 
 let fmt_lex_err err =
-  let open Graphql_lexer in
-  match err with
+  let landmark = register "fmt_lex_err" in
+  enter landmark;
+  (let open Graphql_lexer in
+  let result  = match err with
   | Unknown_character ch -> Printf.sprintf "Unknown character %c" ch
   | Unexpected_character ch -> Printf.sprintf "Unexpected character %c" ch
   | Unterminated_string -> Printf.sprintf "Unterminated string literal"
   | Unknown_character_in_string ch -> Printf.sprintf "Unknown character in string literal: %c" ch
   | Unknown_escape_sequence s -> Printf.sprintf "Unknown escape sequence in string literal: %s" s
   | Unexpected_end_of_file -> Printf.sprintf "Unexpected end of query"
-  | Invalid_number -> Printf.sprintf "Invalid number"
+  | Invalid_number -> Printf.sprintf "Invalid number" in
+  exit landmark; result)
 
 let fmt_parse_err err =
-  let open Graphql_parser in
-  match err with
+  let landmark = register "fmt_parse_err" in
+  enter landmark;
+  (let open Graphql_parser in
+  let result = match err with
   | Unexpected_token t -> Printf.sprintf "Unexpected token %s" (Graphql_lexer.string_of_token t)
   | Unexpected_end_of_file -> "Unexpected end of query"
-  | Lexer_error err -> fmt_lex_err err
+  | Lexer_error err -> fmt_lex_err err in
+  exit landmark; result)
 
 let make_error_expr loc message =
-  let open Ast_402 in
+  let landmark = register "fmt_parse_err" in
+  enter landmark;
+  (let open Ast_402 in
   let ext = Ast_mapper.extension_of_error (Location.error ~loc message) in
-  Ast_helper.Exp.extension ~loc ext
+  let result = Ast_helper.Exp.extension ~loc ext in
+  exit landmark; result)
 
 let is_prefixed prefix str =
+  let landmark = register "is_prefixed" in
+  enter landmark;
   let i = 0 in
   let len = String.length prefix in
   let j = ref 0 in
@@ -61,20 +72,27 @@ let is_prefixed prefix str =
                     String.unsafe_get str (i + !j) do
     incr j
   done;
-  (!j = len)
+  (let result = !j = len in
+    exit landmark; result)
 
 let drop_prefix prefix str =
+  let landmark = register "drop_prefix" in
+  enter landmark;
   let len = String.length prefix in
   let rest = (String.length str) - len in
-  String.sub str len rest
+  let result = String.sub str len rest in
+  exit landmark;
+  result
 
 let rewrite_query loc delim query =
+  let landmark = register "rewrite_query" in
+  enter landmark;
   let open Ast_402 in
   let open Ast_helper in
   let open Parsetree in
   let lexer = Graphql_lexer.make query in
   let delimLength = match delim with | Some s -> 2 + String.length s | None -> 1 in
-  match Graphql_lexer.consume lexer with
+  (let result = match Graphql_lexer.consume lexer with
   | Result.Error e -> raise (Location.Error (
       Location.error ~loc:(add_loc delimLength loc e.span |> conv_loc) (fmt_lex_err e.item)
     ))
@@ -100,7 +118,9 @@ let rewrite_query loc delim query =
                [%stri let _ = [%e make_error_expr loc msg]]) errs))
       | None ->
         let parts = Result_decoder.unify_document_schema config document in
-        Output_bucklescript_module.generate_modules config parts
+        Output_bucklescript_module.generate_modules config parts in
+    exit landmark;
+    result)
 
 let mapper argv =
   let open Ast_402 in
@@ -134,24 +154,29 @@ let mapper argv =
         raise (Location.Error (Location.error ~loc message))
     }) in
 
-  let module_expr mapper mexpr = begin
-    match mexpr with
-    | {pmod_desc = Pmod_extension ({txt = "graphql"; loc}, pstr); _} -> begin
-        match pstr with
-        | PStr [{ pstr_desc = Pstr_eval ({
-            pexp_loc = loc;
-            pexp_desc = Pexp_constant (Const_string (query, delim)); _}, _); _}] -> begin
-            rewrite_query
-              (conv_loc_from_ast loc)
-              delim
-              query
-          end
-        | _ -> raise (Location.Error (
-            Location.error ~loc "[%graphql] accepts a string, e.g. [%graphql {| { query |}]"
-          ))
-      end
-    | other -> default_mapper.module_expr mapper other
-  end in
+  let module_expr mapper mexpr = let landmark = register "module_expr" in
+    enter landmark;
+    let result = begin
+      match mexpr with
+      | {pmod_desc = Pmod_extension ({txt = "graphql"; loc}, pstr); _} -> begin
+          match pstr with
+          | PStr [{ pstr_desc = Pstr_eval ({
+              pexp_loc = loc;
+              pexp_desc = Pexp_constant (Const_string (query, delim)); _}, _); _}] -> begin
+              rewrite_query
+                (conv_loc_from_ast loc)
+                delim
+                query
+            end
+          | _ -> raise (Location.Error (
+              Location.error ~loc "[%graphql] accepts a string, e.g. [%graphql {| { query |}]"
+            ))
+        end
+      | other -> default_mapper.module_expr mapper other
+    end in
+    exit landmark;
+    result
+  in
 
   To_current.copy_mapper { default_mapper with module_expr }
 
